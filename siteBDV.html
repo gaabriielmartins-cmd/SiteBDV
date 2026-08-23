@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<!--
+  siteBDV.html
+  ------------
+  Template do site do Batata Das Vargens.
+
+  Este arquivo é renderizado pelo Flask (veja banco-de-dados.py). As partes
+  escritas com chaves duplas (variável entre chaves) ou com "for" dentro de
+  chaves-porcentagem são código Jinja2: o Flask substitui isso pelos dados
+  reais (nome da loja, cardápio, links, etc.) antes de mandar o HTML pronto
+  pro navegador.
+
+  Estrutura da página, de cima pra baixo:
+    1) HERO        -> logo + nome + botões de ação
+    2) CARDÁPIO     -> lista de categorias e itens (vem do MENU no Python)
+    3) CONTATO      -> links de WhatsApp e Instagram
+    4) RODAPÉ       -> endereço e horário de funcionamento
+    5) BOTÃO FLUTUANTE de WhatsApp (fica sempre visível ao rolar a página)
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ nome_loja }} — Cardápio</title>
+<meta name="description" content="{{ tagline }}">
+<!-- Usa a própria logo como ícone da aba do navegador (favicon) -->
+<link rel="icon" type="image/png" href="/static/logo.png">
+
+<!-- Fontes do Google Fonts:
+     Fraunces     -> títulos (serifa robusta, dá personalidade)
+     Work Sans    -> textos e descrições (sans-serif, fácil de ler)
+     IBM Plex Mono -> preços e selinhos (visual de "nota de pedido") -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<style>
+  /* ============================================================
+     PALETA DE CORES E FONTES DA MARCA
+     Definidas uma vez aqui como "variáveis CSS" (--nome-da-cor) e
+     reaproveitadas em todo o resto do arquivo com var(--nome-da-cor).
+     Quer mudar uma cor em todo o site? Só trocar o valor aqui.
+     ============================================================ */
+  :root{
+    --cream:      #FFF6E8;  /* fundo claro da página */
+    --cream-2:    #FFEFD6;  /* fundo levemente mais escuro (seção de contato) */
+    --wine:       #73061A;  /* vinho escuro — hero e rodapé */
+    --red:        #BF2626;  /* vermelho — botão flutuante, títulos de categoria */
+    --orange:     #F29E38;  /* laranja — linhas divisórias do cardápio */
+    --gold:       #F2B138;  /* amarelo/dourado — destaques e botão principal */
+    --terracotta: #C43225;  /* terracota — gradiente do hero, textos de apoio */
+    --ink:        #3A1108;  /* cor do texto principal (marrom bem escuro) */
+
+    --font-display: 'Fraunces', serif;      /* títulos */
+    --font-body: 'Work Sans', sans-serif;   /* textos */
+    --font-mono: 'IBM Plex Mono', monospace; /* preços e selinhos */
+  }
+
+  /* Reset básico: zera margem/padding padrão do navegador e faz todo
+     mundo calcular tamanho (largura/altura) incluindo borda e padding,
+     o que evita várias dores de cabeça de layout. */
+  *{ margin:0; padding:0; box-sizing:border-box; }
+
+  /* Rolagem suave ao clicar em links tipo #cardapio */
+  html{ scroll-behavior:smooth; }
+
+  body{
+    background:var(--cream);
+    color:var(--ink);
+    font-family:var(--font-body);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased; /* deixa a fonte mais suave no Mac/iOS */
+  }
+
+  img, svg{ display:block; max-width:100%; } /* evita imagem "vazando" da tela */
+
+  a{ color:inherit; text-decoration:none; } /* links sem sublinhado e sem cor azul padrão */
+
+  /* .container centraliza o conteúdo e limita a largura máxima —
+     usado em (quase) toda seção da página para manter tudo alinhado. */
+  .container{
+    width:100%;
+    max-width:640px;
+    margin:0 auto;
+    padding:0 20px;
+  }
+
+  /* ---------------------------------------------------------- */
+  /* HERO — topo da página: fundo colorido, selo, logo e botões  */
+  /* ---------------------------------------------------------- */
+
+  .hero{
+    position:relative;
+    /* gradiente radial que vai de terracota (centro/topo) até vinho
+       escuro (bordas), dando profundidade ao fundo */
+    background:
+      radial-gradient(120% 90% at 50% -10%, var(--terracotta) 0%, var(--wine) 62%, var(--wine) 100%);
+    color:var(--cream);
+    padding:56px 0 44px;
+    overflow:hidden;   /* evita que a textura decorativa vaze da caixa */
+    isolation:isolate; /* garante que o ::before fique só dentro do .hero */
+  }
+
+  .hero::before{
+    /* textura sutil de "manchas de calor" — camada decorativa por trás
+       do conteúdo do hero, feita só com gradientes (sem imagem) */
+    content:"";
+    position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(242,177,56,0.18), transparent 40%),
+      radial-gradient(circle at 85% 75%, rgba(191,38,38,0.25), transparent 45%);
+    z-index:-1;
+  }
+
+  .hero-inner{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:18px;
+  }
+
+  /* "Selo" com o texto "Vargens · Rio de Janeiro" no topo do hero */
+  .stamp{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--gold);
+    border:1.5px dashed rgba(242,177,56,0.6);
+    border-radius:999px;
+    padding:6px 16px;
+  }
+
+  /* Círculo que envolve a logo, com sombra e leve animação de flutuar */
+  .logo-wrap{
+    width:172px;
+    height:172px;
+    margin:6px 0 2px;
+    border-radius:50%;
+    background:var(--cream);
+    box-shadow:0 14px 30px rgba(0,0,0,0.28), 0 0 0 6px rgba(242,177,56,0.22);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+    animation:float 4.5s ease-in-out infinite;
+  }
+
+  .logo-img{
+    width:88%;
+    height:88%;
+    object-fit:contain; /* mantém a proporção da imagem, sem distorcer */
+    border-radius:50%;
+  }
+
+  /* Animação: sobe e desce bem devagar, dando a sensação de "flutuar" */
+  @keyframes float{
+    0%, 100%{ transform:translateY(0); }
+    50%{ transform:translateY(-8px); }
+  }
+
+  /* Respeita quem configurou o sistema para reduzir animações
+     (acessibilidade) — desliga a animação da logo nesse caso */
+  @media (prefers-reduced-motion: reduce){
+    .logo-wrap{ animation:none; }
+  }
+
+  /* Esconde visualmente mas mantém acessível para leitores de tela.
+     Usado no <h1> com o nome da loja, já que a logo já mostra o nome. */
+  .sr-only{
+    position:absolute;
+    width:1px; height:1px;
+    padding:0; margin:-1px;
+    overflow:hidden;
+    clip:rect(0,0,0,0);
+    white-space:nowrap;
+    border:0;
+  }
+
+  .tagline{
+    font-family:var(--font-body);
+    font-size:1rem;
+    color:var(--cream-2);
+    max-width:32ch; /* limita a largura do texto pra não ficar uma linha gigante */
+  }
+
+  .cta-row{
+    display:flex;
+    gap:12px;
+    margin-top:10px;
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+
+  /* Estilo base dos botões (usado tanto no "Pedir pelo WhatsApp"
+     quanto no "Ver cardápio") */
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-family:var(--font-body);
+    font-weight:600;
+    font-size:0.95rem;
+    padding:13px 22px;
+    border-radius:999px;
+    transition:transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .btn:active{ transform:scale(0.97); } /* efeito de "afundar" ao tocar/clicar */
+
+  /* Botão principal (dourado) — ação mais importante: pedir no WhatsApp */
+  .btn-primary{
+    background:var(--gold);
+    color:var(--wine);
+    box-shadow:0 6px 18px rgba(0,0,0,0.25);
+  }
+  .btn-primary:hover{ box-shadow:0 8px 22px rgba(0,0,0,0.32); }
+
+  /* Botão secundário (contorno) — ação de apoio: rolar até o cardápio */
+  .btn-ghost{
+    background:transparent;
+    color:var(--cream);
+    border:1.5px solid rgba(255,246,232,0.45);
+  }
+  .btn-ghost:hover{ border-color:var(--cream); }
+
+  /* ---------------------------------------------------------- */
+  /* CARDÁPIO — lista de categorias e itens (dados vêm do MENU)  */
+  /* ---------------------------------------------------------- */
+
+  .menu-section{
+    padding:44px 0 20px;
+  }
+
+  /* Pequeno texto acima do título "Cardápio" (estilo "etiqueta") */
+  .section-eyebrow{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:0.16em;
+    text-transform:uppercase;
+    color:var(--terracotta);
+    margin-bottom:6px;
+  }
+
+  .section-title{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:1.9rem;
+    color:var(--wine);
+    margin-bottom:26px;
+  }
+
+  /* Cada bloco de categoria (ex: "Combos", "Burguers") */
+  .categoria{
+    margin-bottom:34px;
+  }
+
+  /* Título da categoria, com uma linha tracejada embaixo —
+     visual de "ticket de pedido" */
+  .categoria-titulo{
+    display:flex;
+    align-items:baseline;
+    gap:12px;
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:1.25rem;
+    color:var(--red);
+    padding-bottom:8px;
+    border-bottom:2px dashed var(--orange);
+    margin-bottom:16px;
+  }
+
+  /* Linha de um item do cardápio: nome+descrição à esquerda,
+     preço à direita (usa justify-content:space-between) */
+  .item{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:14px;
+    padding:14px 0;
+    border-bottom:1px solid rgba(196,50,37,0.15);
+  }
+
+  .item:last-child{ border-bottom:none; } /* tira a linha do último item de cada categoria */
+
+  .item-info{ flex:1; } /* ocupa o espaço restante, empurrando o preço pra direita */
+
+  .item-nome{
+    font-family:var(--font-body);
+    font-weight:600;
+    font-size:1.02rem;
+    color:var(--ink);
+    margin-bottom:3px;
+  }
+
+  .item-descricao{
+    font-family:var(--font-body);
+    font-size:0.87rem;
+    color:#6b4636;
+    line-height:1.45;
+  }
+
+  /* Preço em fonte monoespaçada — dá aquele visual de "nota fiscal" */
+  .item-preco{
+    font-family:var(--font-mono);
+    font-weight:600;
+    font-size:0.95rem;
+    color:var(--wine);
+    white-space:nowrap; /* nunca quebra o preço em duas linhas */
+    padding-top:2px;
+  }
+
+  /* ---------------------------------------------------------- */
+  /* CONTATO / REDES — cards de WhatsApp e Instagram             */
+  /* ---------------------------------------------------------- */
+
+  .contato-section{
+    background:var(--cream-2);
+    padding:40px 0 44px;
+    margin-top:20px;
+    border-top:1px solid rgba(191,38,38,0.15);
+  }
+
+  .contato-title{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:1.5rem;
+    color:var(--wine);
+    margin-bottom:8px;
+  }
+
+  .contato-sub{
+    font-size:0.92rem;
+    color:#6b4636;
+    margin-bottom:22px;
+    max-width:38ch;
+  }
+
+  /* No celular os cards ficam empilhados (coluna); vira "lado a lado"
+     em telas maiores (ver media query de RESPONSIVO lá embaixo) */
+  .contato-links{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+
+  .contato-link{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    background:var(--cream);
+    border:1.5px solid rgba(191,38,38,0.18);
+    border-radius:14px;
+    padding:14px 16px;
+    font-weight:600;
+    font-size:0.95rem;
+    color:var(--wine);
+    transition:border-color 0.15s ease, transform 0.15s ease;
+  }
+
+  .contato-link:hover{
+    border-color:var(--red);
+    transform:translateX(2px); /* desliza levemente ao passar o mouse */
+  }
+
+  .contato-link .icon{
+    width:22px;
+    height:22px;
+    flex-shrink:0; /* impede o ícone de "espremer" quando o texto é longo */
+    color:var(--red);
+  }
+
+  /* ---------------------------------------------------------- */
+  /* RODAPÉ — endereço e horário de funcionamento                */
+  /* ---------------------------------------------------------- */
+
+  footer{
+    background:var(--wine);
+    color:var(--cream-2);
+    padding:32px 0 100px; /* padding extra embaixo pra não ficar atrás do botão flutuante */
+    text-align:center;
+  }
+
+  footer .footer-nome{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:1.1rem;
+    color:var(--gold);
+    margin-bottom:10px;
+  }
+
+  footer .footer-linha{
+    font-size:0.85rem;
+    color:rgba(255,246,232,0.75);
+    margin-bottom:4px;
+  }
+
+  /* ---------------------------------------------------------- */
+  /* BOTÃO FLUTUANTE DE WHATSAPP — sempre visível ao rolar a tela */
+  /* ---------------------------------------------------------- */
+
+  .whatsapp-float{
+    position:fixed; /* fica "grudado" na tela mesmo quando o usuário rola a página */
+    right:18px;
+    bottom:18px;
+    background:var(--red);
+    color:var(--cream);
+    width:56px;
+    height:56px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 8px 22px rgba(115,6,26,0.4);
+    z-index:50; /* garante que fique por cima do resto do conteúdo */
+    transition:transform 0.15s ease;
+  }
+  .whatsapp-float:active{ transform:scale(0.94); } /* efeito de "afundar" ao tocar */
+  .whatsapp-float svg{ width:26px; height:26px; }
+
+  /* ---------------------------------------------------------- */
+  /* RESPONSIVO — ajustes para telas maiores (tablet/desktop)    */
+  /* Mobile-first: o CSS acima já é pensado pro celular; aqui só */
+  /* sobrescrevemos o que muda em telas a partir de 720px.       */
+  /* ---------------------------------------------------------- */
+
+  @media (min-width:720px){
+    .container{ max-width:760px; }
+    .hero{ padding:80px 0 64px; }
+    .item-nome{ font-size:1.08rem; }
+    .contato-links{ flex-direction:row; } /* cards lado a lado em vez de empilhados */
+    .contato-link{ flex:1; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============================================================ -->
+  <!-- HERO: logo, selo, tagline e botões de ação                    -->
+  <!-- ============================================================ -->
+  <header class="hero">
+    <div class="container hero-inner">
+      <span class="stamp">Vargens · Rio de Janeiro</span>
+
+      <!-- Logo da loja, com moldura circular e leve animação flutuante -->
+      <div class="logo-wrap">
+        <img src="/static/logo.png" alt="{{ nome_loja }}" class="logo-img">
+      </div>
+
+      <!-- Nome da loja como <h1> para SEO/acessibilidade, mas escondido
+           visualmente (.sr-only) porque a logo já mostra o nome escrito -->
+      <h1 class="sr-only">{{ nome_loja }}</h1>
+      <p class="tagline">{{ tagline }}</p>
+
+      <div class="cta-row">
+        <!-- Botão principal: abre o WhatsApp com mensagem pronta -->
+        <a class="btn btn-primary" href="{{ whatsapp_link }}" target="_blank" rel="noopener">
+          Pedir pelo WhatsApp
+        </a>
+        <!-- Botão secundário: rola a página até a seção #cardapio -->
+        <a class="btn btn-ghost" href="#cardapio">
+          Ver cardápio
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- CARDÁPIO: gerado automaticamente a partir do MENU (Python)    -->
+  <!-- ============================================================ -->
+  <main>
+    <section class="menu-section container" id="cardapio">
+      <p class="section-eyebrow">O que temos hoje</p>
+      <h2 class="section-title">Cardápio</h2>
+
+      {# 'menu' é o dicionário MENU que vem do banco-de-dados.py.       #}
+      {# O primeiro loop percorre cada CATEGORIA (ex: "Combos"),        #}
+      {# e o segundo loop percorre cada ITEM dentro daquela categoria.  #}
+      {% for categoria, itens in menu.items() %}
+      <div class="categoria">
+        <h3 class="categoria-titulo">{{ categoria }}</h3>
+        {% for item in itens %}
+        <div class="item">
+          <div class="item-info">
+            <p class="item-nome">{{ item.nome }}</p>
+            <p class="item-descricao">{{ item.descricao }}</p>
+          </div>
+          {# Formata o preço com 2 casas decimais e troca o ponto por   #}
+          {# vírgula, pra ficar no padrão brasileiro (ex: 24.9 -> 24,90) #}
+          <p class="item-preco">R$ {{ "%.2f"|format(item.preco)|replace(".", ",") }}</p>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- CONTATO: cards de WhatsApp e Instagram                         -->
+    <!-- ============================================================ -->
+    <section class="contato-section">
+      <div class="container">
+        <h2 class="contato-title">Fale com a gente</h2>
+        <p class="contato-sub">Pedidos, encomendas e dúvidas — respondemos rapidinho.</p>
+
+        <div class="contato-links">
+          <!-- Card do WhatsApp (ícone SVG desenhado direto no código, sem imagem externa) -->
+          <a class="contato-link" href="{{ whatsapp_link }}" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.71.45 3.38 1.3 4.85L2 22l5.36-1.4a9.9 9.9 0 0 0 4.68 1.19h.01c5.46 0 9.9-4.45 9.9-9.9C21.96 6.45 17.5 2 12.04 2Zm5.8 14.06c-.24.68-1.4 1.3-1.94 1.38-.5.08-1.12.11-1.8-.11-.42-.13-.95-.3-1.64-.6-2.88-1.24-4.76-4.15-4.9-4.34-.14-.19-1.17-1.55-1.17-2.96 0-1.4.74-2.09 1-2.38.26-.28.57-.35.76-.35.19 0 .38 0 .55.01.18.01.42-.07.65.5.24.58.82 2 .89 2.14.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.16.28.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.22 1.37.28.14.44.12.6-.07.16-.19.68-.79.86-1.06.18-.28.36-.23.6-.14.24.09 1.55.73 1.82.86.27.14.44.2.51.31.07.12.07.68-.17 1.36Z"/></svg>
+            WhatsApp: (21) 97274-9663
+          </a>
+          <!-- Card do Instagram (mesmo esquema: ícone SVG + link real) -->
+          <a class="contato-link" href="{{ instagram_link }}" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.2c3.2 0 3.58.01 4.85.07 1.17.05 1.97.24 2.43.4a4.9 4.9 0 0 1 1.77 1.15 4.9 4.9 0 0 1 1.15 1.77c.16.46.35 1.26.4 2.43.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.24 1.97-.4 2.43a4.9 4.9 0 0 1-1.15 1.77 4.9 4.9 0 0 1-1.77 1.15c-.46.16-1.26.35-2.43.4-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.97-.24-2.43-.4a4.9 4.9 0 0 1-1.77-1.15 4.9 4.9 0 0 1-1.15-1.77c-.16-.46-.35-1.26-.4-2.43C2.21 15.58 2.2 15.2 2.2 12s.01-3.58.07-4.85c.05-1.17.24-1.97.4-2.43a4.9 4.9 0 0 1 1.15-1.77A4.9 4.9 0 0 1 5.59 1.8c.46-.16 1.26-.35 2.43-.4C9.29 1.34 9.67 1.33 12 1.33Zm0 2.16c-3.15 0-3.5.01-4.73.07-1.02.05-1.57.22-1.94.36-.49.19-.83.42-1.2.79-.37.37-.6.71-.79 1.2-.14.37-.31.92-.36 1.94-.06 1.23-.07 1.58-.07 4.73s.01 3.5.07 4.73c.05 1.02.22 1.57.36 1.94.19.49.42.83.79 1.2.37.37.71.6 1.2.79.37.14.92.31 1.94.36 1.23.06 1.58.07 4.73.07s3.5-.01 4.73-.07c1.02-.05 1.57-.22 1.94-.36.49-.19.83-.42 1.2-.79.37-.37.6-.71.79-1.2.14-.37.31-.92.36-1.94.06-1.23.07-1.58.07-4.73s-.01-3.5-.07-4.73c-.05-1.02-.22-1.57-.36-1.94a3.2 3.2 0 0 0-.79-1.2 3.2 3.2 0 0 0-1.2-.79c-.37-.14-.92-.31-1.94-.36-1.23-.06-1.58-.07-4.73-.07Zm0 3.68a5.96 5.96 0 1 1 0 11.92 5.96 5.96 0 0 1 0-11.92Zm0 2.16a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Zm6.2-2.4a1.39 1.39 0 1 1-2.78 0 1.39 1.39 0 0 1 2.78 0Z"/></svg>
+            {{ instagram_user }}
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- RODAPÉ: nome, endereço e horário de funcionamento              -->
+  <!-- ============================================================ -->
+  <footer>
+    <div class="container">
+      <p class="footer-nome">{{ nome_loja }}</p>
+      <p class="footer-linha">{{ endereco }}</p>
+      {# Percorre a lista HORARIO_FUNCIONAMENTO do Python,               #}
+      {# uma linha do rodapé para cada item da lista.                   #}
+      {% for linha in horario_funcionamento %}
+      <p class="footer-linha">{{ linha }}</p>
+      {% endfor %}
+    </div>
+  </footer>
+
+  <!-- ============================================================ -->
+  <!-- BOTÃO FLUTUANTE: atalho de WhatsApp sempre visível             -->
+  <!-- ============================================================ -->
+  <a class="whatsapp-float" href="{{ whatsapp_link }}" target="_blank" rel="noopener" aria-label="Pedir pelo WhatsApp">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.71.45 3.38 1.3 4.85L2 22l5.36-1.4a9.9 9.9 0 0 0 4.68 1.19h.01c5.46 0 9.9-4.45 9.9-9.9C21.96 6.45 17.5 2 12.04 2Zm5.8 14.06c-.24.68-1.4 1.3-1.94 1.38-.5.08-1.12.11-1.8-.11-.42-.13-.95-.3-1.64-.6-2.88-1.24-4.76-4.15-4.9-4.34-.14-.19-1.17-1.55-1.17-2.96 0-1.4.74-2.09 1-2.38.26-.28.57-.35.76-.35.19 0 .38 0 .55.01.18.01.42-.07.65.5.24.58.82 2 .89 2.14.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.16.28.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.22 1.37.28.14.44.12.6-.07.16-.19.68-.79.86-1.06.18-.28.36-.23.6-.14.24.09 1.55.73 1.82.86.27.14.44.2.51.31.07.12.07.68-.17 1.36Z"/></svg>
+  </a>
+
+</body>
+</html>

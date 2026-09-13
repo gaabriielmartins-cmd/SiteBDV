@@ -51,14 +51,14 @@ from flask import Flask, render_template, jsonify
 # (hero, seção de contato, rodapé e botão flutuante).
 
 NOME_LOJA = "Batata Das Vargens"
-TAGLINE = "Hambúrguer artesanal, batata frita e combos que mata sua fome nas Vargens"
+TAGLINE = "Hambúrguers delicios, batata frita e combos que mata sua fome nas Vargens"
 
 # Número de WhatsApp no formato internacional, só números (sem espaço, +, ( ) ou -).
 # Ex: 55 (Brasil) + 21 (DDD) + número
 WHATSAPP_NUMERO = "5521972749663"
 
 # Mensagem que já vem pronta quando o cliente clica no botão de WhatsApp do site.
-WHATSAPP_MENSAGEM_PADRAO = "Olá! Vi o cardápio do Batata Das Vargens pelo seu site e quero fazer um pedido "
+WHATSAPP_MENSAGEM_PADRAO = "Olá! Vi o cardápio do Batata Das Vargens pelo seu site e quero fazer um pedido"
 
 # Monta o link final do WhatsApp juntando número + mensagem.
 # O .replace(" ", "%20") troca espaços por "%20", que é como uma URL
@@ -71,7 +71,7 @@ INSTAGRAM_LINK = "https://www.instagram.com/batatadasvargens/"
 
 # Endereço e horário de funcionamento, mostrados no rodapé do site.
 # HORARIO_FUNCIONAMENTO é uma lista: cada item vira uma linha no rodapé.
-ENDERECO = "Vargens, Rio de Janeiro - RJ"
+ENDERECO = "Rua Manuel Bastos de Oliveira 21, Vargem Pequena, Rio de Janeiro - RJ"
 HORARIO_FUNCIONAMENTO = [
     "Terça a Domingo: 18h às 23h",
     "Segunda: fechado",

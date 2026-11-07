@@ -36,11 +36,13 @@ ESTRUTURA DE PASTAS ESPERADA
 # assim o Flask sabe onde procurar o siteBDV.html e a pasta static/,
 # não importa de onde você rode o comando "python banco-de-dados.py".
 import os
+import gzip
+from hashlib import sha256
 
 # Flask   -> cria e configura o servidor web (a "aplicação")
 # render_template -> pega o siteBDV.html e substitui as variáveis {{ }} pelos dados reais
 # jsonify -> transforma um dicionário Python em resposta JSON (usado na rota /api/cardapio)
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 
 # ==========================================================================
 # CONFIGURAÇÕES GERAIS DO ESTABELECIMENTO
@@ -520,13 +522,11 @@ app = Flask(
 )
 
 
-@app.route("/")
-def home():
+def _render_home():
     """
     Rota principal do site (a página "/", ou seja, a home).
 
-    Toda vez que alguém abre http://localhost:5000 no navegador, esta
-    função é chamada. Ela pega o template siteBDV.html e "recheia" ele
+    Esta função pega o template siteBDV.html e "recheia" ele
     com os dados definidos lá em cima (nome da loja, cardápio, links de
     contato, endereço, horário...).
 
@@ -547,17 +547,71 @@ def home():
     )
 
 
+# Revalida arquivos estáticos após uma hora; ETag permite responder 304.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
+
+
+def _prepare_content(body):
+    """Guarda bytes e ETags separados para cada representação HTTP."""
+    compressed = gzip.compress(body, compresslevel=6, mtime=0)
+    return {
+        "identity": (body, sha256(body).hexdigest()),
+        "gzip": (compressed, sha256(compressed).hexdigest()),
+    }
+
+
+def _build_content():
+    # Executado uma vez por processo em produção. Ao editar o cardápio
+    # ou o template, reinicie o Waitress para reconstruir as duas versões.
+    return {
+        "home": _prepare_content(_render_home().encode("utf-8")),
+        "menu": _prepare_content(jsonify(MENU).get_data()),
+    }
+
+
+with app.app_context():
+    _content = _build_content()
+
+
+def _cached_response(name, mimetype):
+    # No modo debug, alterações continuam aparecendo sem cache de conteúdo.
+    content = _build_content()[name] if app.debug else _content[name]
+    encoding = "identity"
+    if request.headers.get("Accept-Encoding"):
+        accepted = request.accept_encodings
+        explicit = {name.lower(): quality for name, quality in accepted}
+        # identity é permitido implicitamente, exceto se explicitamente vetado
+        # ou se *;q=0 também o excluir (RFC 9110).
+        identity_quality = explicit.get(
+            "identity", 0 if explicit.get("*") == 0 else 1
+        )
+        gzip_quality = accepted["gzip"]
+        if gzip_quality > 0 and gzip_quality >= identity_quality:
+            encoding = "gzip"
+        elif identity_quality <= 0:
+            response = app.response_class(status=406)
+            response.vary.add("Accept-Encoding")
+            return response
+    body, etag = content[encoding]
+    # Cada requisição ganha seu próprio Response; somente bytes são compartilhados.
+    response = app.response_class(body, mimetype=mimetype)
+    response.set_etag(etag)
+    response.cache_control.no_cache = True
+    response.vary.add("Accept-Encoding")
+    if encoding == "gzip":
+        response.headers["Content-Encoding"] = "gzip"
+    return response.make_conditional(request)
+
+
+@app.route("/")
+def home():
+    return _cached_response("home", "text/html")
+
+
 @app.route("/api/cardapio")
 def api_cardapio():
-    """
-    Rota extra opcional: retorna o cardápio em formato JSON puro,
-    sem nenhum HTML. Útil se um dia você quiser usar esses mesmos dados
-    em outro lugar (um app de celular, uma tela de totem, etc.) sem
-    precisar copiar o MENU de novo.
-
-    Para testar: rode o site e abra http://localhost:5000/api/cardapio
-    """
-    return jsonify(MENU)
+    """Cardápio JSON com compressão e revalidação, sem serializar a cada acesso."""
+    return _cached_response("menu", "application/json")
 
 
 # Este bloco só roda quando você executa "python banco-de-dados.py"

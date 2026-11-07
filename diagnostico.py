@@ -1,6 +1,9 @@
 import argparse
 import collections
 import concurrent.futures
+import gzip
+import io
+import ipaddress
 import json
 import math
 import statistics
@@ -9,6 +12,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from pathlib import Path
 
 
@@ -17,17 +21,34 @@ class SemRedirecionar(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def consultar(base, rota):
-    inicio = time.monotonic()
-    status, erro, headers, corpo = 0, '', {}, b''
+def criar_cliente(base):
+    """Um cliente por usuário; loopback não precisa descobrir proxies do Windows."""
+    host = urllib.parse.urlsplit(base).hostname or ''
     try:
-        opener = urllib.request.build_opener(SemRedirecionar())
+        local = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        local = host.lower() == 'localhost'
+    handlers = [SemRedirecionar()]
+    if local:
+        handlers.append(urllib.request.ProxyHandler({}))
+    # Para URLs externas, preserva proxies e certificados configurados.
+    return urllib.request.build_opener(*handlers)
+
+
+def consultar(base, rota, cliente=None, comprimir=False):
+    if cliente is None:
+        cliente = criar_cliente(base)
+    inicio = time.monotonic()
+    status, erro, headers, corpo, recebidos = 0, '', {}, b'', 0
+    try:
         req = urllib.request.Request(base.rstrip('/') + rota,
-                                     headers={'User-Agent': 'DiagnosticoBDV/1.0'})
-        with opener.open(req, timeout=15) as resposta:
+                                     headers={'User-Agent': 'DiagnosticoBDV/1.1',
+                                              'Accept-Encoding': 'gzip' if comprimir else 'identity'})
+        with cliente.open(req, timeout=15) as resposta:
             status = resposta.status
             headers = dict(resposta.headers.items())
             corpo = resposta.read(2_000_001)
+            recebidos = len(corpo)
     except urllib.error.HTTPError as exc:
         status = exc.code
         headers = dict(exc.headers.items())
@@ -35,7 +56,13 @@ def consultar(base, rota):
     except Exception as exc:
         erro = type(exc).__name__ + ': ' + str(exc)
     headers = {k.lower(): v for k, v in headers.items()}
-    if status == 200:
+    if status == 200 and not erro and headers.get('content-encoding', '').lower() == 'gzip':
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(corpo)) as arquivo:
+                corpo = arquivo.read(2_000_001)
+        except (OSError, EOFError, ValueError, zlib.error) as exc:
+            erro = 'Gzip invalido: ' + str(exc)
+    if status == 200 and not erro:
         if len(corpo) > 2_000_000:
             erro = 'Resposta maior que 2 MB; leitura limitada'
         elif rota == '/' and b'<title>Batata Das Vargens' not in corpo:
@@ -50,8 +77,10 @@ def consultar(base, rota):
                 erro = 'Cardapio com JSON invalido'
     return dict(rota=rota, status=status, erro=erro,
                 ms=round((time.monotonic() - inicio) * 1000, 1),
+                bytes_recebidos=recebidos,
                 headers={k: v for k, v in headers.items()
-                         if k in ('server', 'ratelimit-limit', 'retry-after')})
+                         if k in ('server', 'ratelimit-limit', 'retry-after',
+                                  'content-encoding', 'etag')})
 
 
 def resumir(linhas):
@@ -91,19 +120,26 @@ def analisar(linhas):
     return alertas or ['Nenhum problema detectado nesta amostra; isso nao garante capacidade maxima.']
 
 
-def executar(url, usuarios, segundos):
-    linhas = [consultar(url, rota) for rota in ('/', '/static/logo.png', '/api/cardapio')]
+def executar(url, usuarios, segundos, comprimir=False):
+    cliente = criar_cliente(url)
+    linhas = [consultar(url, rota, cliente, comprimir)
+              for rota in ('/', '/static/logo.png', '/api/cardapio')]
     inicio = time.monotonic()
     parar = threading.Event()
     lock = threading.Lock()
     motivo = ''
+    preparos = []
     if linhas[0]['erro']:
         return dict(url=url, resumo=resumir(linhas), alertas=analisar(linhas),
                     motivo='Carga nao iniciada: pagina inicial falhou.', amostras=linhas)
 
     def usuario():
+        preparo = time.monotonic()
+        cliente_usuario = criar_cliente(url)
+        with lock:
+            preparos.append((time.monotonic() - preparo) * 1000)
         while time.monotonic() - inicio < segundos and not parar.is_set():
-            resultado = consultar(url, '/')
+            resultado = consultar(url, '/', cliente_usuario, comprimir)
             with lock:
                 linhas.append(resultado)
                 recentes = linhas[-100:]
@@ -111,7 +147,7 @@ def executar(url, usuarios, segundos):
                     s = resumir(recentes)
                     if s['falhas'] >= 20 or s['p95_ms'] > 10000:
                         parar.set()
-            parar.wait(5)
+            parar.wait(min(5, max(0, segundos - (time.monotonic() - inicio))))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=usuarios) as pool:
         tarefas = [pool.submit(usuario) for _ in range(usuarios)]
@@ -120,6 +156,8 @@ def executar(url, usuarios, segundos):
     if parar.is_set():
         motivo = 'Interrompido: >=20% de falhas ou p95 >10s nas ultimas 100 respostas.'
     return dict(url=url, usuarios_virtuais=usuarios,
+                versao_diagnostico='1.1', gzip_solicitado=comprimir,
+                preparo_medio_cliente_ms=round(statistics.mean(preparos), 1),
                 duracao_real_s=round(time.monotonic() - inicio, 1),
                 resumo=resumir(linhas), motivo=motivo,
                 por_rota={rota: resumir([r for r in linhas if r['rota'] == rota])
@@ -133,6 +171,7 @@ def main():
     parser.add_argument('--local', help='URL local opcional para comparar')
     parser.add_argument('--usuarios', type=int, default=1)
     parser.add_argument('--segundos', type=int, default=30)
+    parser.add_argument('--gzip', action='store_true', help='Solicita e valida gzip')
     args = parser.parse_args()
     if not 1 <= args.usuarios <= 100 or not 1 <= args.segundos <= 600:
         parser.error('Use 1 a 100 usuarios e 1 a 600 segundos.')
@@ -143,7 +182,7 @@ def main():
     relatorios = []
     for url in urls:
         print('Analisando', url, '- aguarde...', flush=True)
-        r = executar(url, args.usuarios, args.segundos)
+        r = executar(url, args.usuarios, args.segundos, args.gzip)
         relatorios.append(r)
         print(json.dumps({k: v for k, v in r.items() if k != 'amostras'},
                          ensure_ascii=False, indent=2))
